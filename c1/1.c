@@ -32,7 +32,7 @@ int shm_get(char *filename, int mode)
 	key_t key;
 	int id;
 	key = ftok(filename, mode);
-	printf("%s %d \n", filename, key );
+	printf("%s %d \n", filename, key);
 	if ((id = shmget(key, N * sizeof(int), 0666 | IPC_CREAT)) < 0)
 		printf("shmget error");
 	printf("Shared memory ID = %d\n", id);
@@ -59,7 +59,6 @@ void shm_remove(int id)
 		printf("shmctl error");
 	printf("Shared memory removed\n");
 }
-
 
 double sum(double *vector, int n)
 {
@@ -132,10 +131,14 @@ int main(int argc, char **argv)
 			sigusr.sa_handler = (&sig_usr_1);
 			sigaction(SIGUSR1, &sigusr, NULL);
 			pause();
-			result_id = shm_get("1.c", 'A');
-			range_id = shm_get("1n.c", 'B');
+			data_id = shm_get("1.c", 'A');
+			shm_attach(&data, data_id);
+			result_id = shm_get("1.c", 'B');
 			shm_attach(&results, result_id);
+			range_id = shm_get("1.c", 'C');
 			shm_attach(&range, range_id);
+			for (j = 0; j < N; j++)
+				printf("%d ", data[j]);
 			child_work(j);
 			shm_detach(&results);
 			shm_detach(&range);
@@ -145,25 +148,30 @@ int main(int argc, char **argv)
 		}
 	}
 
+	data_id = shm_get("1.c", 'A');
+	shm_attach(&data, data_id);
+
 	FILE *f = fopen("vector.dat", "r");
 	char buffor[BUFFOR_SIZE + 1];
 	double *vector;
 	int n;
 
-	// fgets(buffor, BUFFOR_SIZE, f);
-	// n = atoi(buffor);
-	// vector = malloc(sizeof(double) * n);
-	// printf("Vector has %d elements\n", n);
+	fgets(buffor, BUFFOR_SIZE, f);
+	n = atoi(buffor);
+	vector = malloc(sizeof(double) * n);
+	printf("Vector has %d elements\n", n);
+	for (i = 0; i < n; i++)
+	{
+		fgets(buffor, BUFFOR_SIZE, f);
+		data[i] = atof(buffor);
+	}
+	fclose(f);
 	// for (i = 0; i < n; i++)
-	// {
-	// 	fgets(buffor, BUFFOR_SIZE, f);
-	// 	vector[i] = atof(buffor);
-	// }
-	// fclose(f);
+	// printf("%d ", data[i]);
 
-	result_id = shm_get("1.c", 'A');
+	result_id = shm_get("1.c", 'B');
 	shm_attach(&results, result_id);
-	range_id = shm_get("1n.c", 'B');
+	range_id = shm_get("1.c", 'C');
 	shm_attach(&range, range_id);
 
 	sleep(1);
@@ -182,6 +190,8 @@ int main(int argc, char **argv)
 	shm_remove(range_id);
 	shm_detach(&results);
 	shm_remove(result_id);
+	shm_detach(&data);
+	shm_remove(data_id);
 	printf("\n%d %d \n", range_id, result_id);
 	clock_t end = clock();
 	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
