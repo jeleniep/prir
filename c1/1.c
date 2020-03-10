@@ -8,60 +8,58 @@
 #include <sys/shm.h>
 #include "err.h"
 #include <signal.h>
+#include <time.h>
 
 #define BUFFOR_SIZE 80
 #define BUFSIZE 100
 
-const int N = 2;
+const int N = 20;
 int reset = 0;
 int *children;
 
-int   shmid;
-int* shmaddr;
- 
-void shm_get()
+int data_id;
+int *data;
+
+int result_id;
+int *results;
+
+int range_id;
+int *range;
+
+int shm_get(char *filename, int mode)
 {
-//   char buf[BUFSIZE];
-  key_t key;
- 
-  key = 1;
- 
-  if( (shmid = shmget(key, N * sizeof(int), 0666 | IPC_CREAT)) < 0)
-    printf("shmget error");
-  printf("Shared memory ID = %d\n", shmid);
+	//   char buf[BUFSIZE];
+	key_t key;
+	int id;
+	key = ftok(filename, mode);
+	printf("%s %d \n", filename, key );
+	if ((id = shmget(key, N * sizeof(int), 0666 | IPC_CREAT)) < 0)
+		printf("shmget error");
+	printf("Shared memory ID = %d\n", id);
+	return id;
 }
- 
-void shm_attach()
+
+void shm_attach(int **addr, int id)
 {
-  if( (shmaddr = shmat(shmid, 0, 0)) < 0)
-    printf("shmat error");
-  printf("Shared memory attached\n");
+	if ((*addr = shmat(id, 0, 0)) < 0)
+		printf("shmat error");
+	printf("Shared memory attached\n");
 }
- 
-void shm_detach()
+
+void shm_detach(int **addr)
 {
-  if( shmdt(shmaddr) < 0)
-    printf("shmdt error");
-  printf("Shared memory detached\n");
+	if (shmdt(*addr) < 0)
+		printf("shmdt error");
+	printf("Shared memory detached\n");
 }
- 
-void shm_remove()
+
+void shm_remove(int id)
 {
-  if( shmctl(shmid, IPC_RMID, 0) < 0)
-    printf("shmctl error");
-  printf("Shared memory removed\n");
+	if (shmctl(id, IPC_RMID, 0) < 0)
+		printf("shmctl error");
+	printf("Shared memory removed\n");
 }
- 
-// void shm_read()
-// {
-//   printf("Message: %s\n",shmaddr);
-// }
- 
-// void shm_write()
-// {
-//   printf("Message: ");
-//   fgets(shmaddr, BUFSIZE - 1, stdin);
-// }
+
 
 double sum(double *vector, int n)
 {
@@ -93,12 +91,14 @@ void sig_usr_1(int signal)
 
 void child_work(int j)
 {
-  printf("Jestem dzieckiem %d o pid=%d\n", j, getpid());
-  shmaddr[j] = 2 * j;
+	printf("Jestem dzieckiem %d o pid=%d\n", j, getpid());
+	results[j] = 2 * j;
 }
 
 int main(int argc, char **argv)
 {
+	clock_t start = clock();
+
 	children = malloc(N * sizeof(int));
 	struct sigaction setup_action;
 	sigset_t block_mask;
@@ -132,23 +132,61 @@ int main(int argc, char **argv)
 			sigusr.sa_handler = (&sig_usr_1);
 			sigaction(SIGUSR1, &sigusr, NULL);
 			pause();
-			shm_get();
-			shm_attach();			
+			result_id = shm_get("1.c", 'A');
+			range_id = shm_get("1n.c", 'B');
+			shm_attach(&results, result_id);
+			shm_attach(&range, range_id);
 			child_work(j);
-			shm_detach();
-			return getpid() % 10;
+			shm_detach(&results);
+			shm_detach(&range);
+			exit(0);
 		default:
 			printf("moj: %d, dziecka: %d\n", getpid(), pid);
 		}
 	}
-	shm_get();
-	shm_attach();
+
+	FILE *f = fopen("vector.dat", "r");
+	char buffor[BUFFOR_SIZE + 1];
+	double *vector;
+	int n;
+
+	// fgets(buffor, BUFFOR_SIZE, f);
+	// n = atoi(buffor);
+	// vector = malloc(sizeof(double) * n);
+	// printf("Vector has %d elements\n", n);
+	// for (i = 0; i < n; i++)
+	// {
+	// 	fgets(buffor, BUFFOR_SIZE, f);
+	// 	vector[i] = atof(buffor);
+	// }
+	// fclose(f);
+
+	result_id = shm_get("1.c", 'A');
+	shm_attach(&results, result_id);
+	range_id = shm_get("1n.c", 'B');
+	shm_attach(&range, range_id);
+
+	sleep(1);
 	for (j = 0; j < N; j++)
-		wait(NULL);
+		kill(children[j], SIGUSR1);
 	for (j = 0; j < N; j++)
-		printf("%d ", shmaddr[j]);
-	
-	shm_detach();
-	shm_remove();
+		if (wait(0) == -1)
+		{
+			perror("wait: wait failed [-1 dawg]");
+			exit(1);
+		}
+	for (j = 0; j < N; j++)
+		printf("%d ", results[j]);
+
+	shm_detach(&range);
+	shm_remove(range_id);
+	shm_detach(&results);
+	shm_remove(result_id);
+	printf("\n%d %d \n", range_id, result_id);
+	clock_t end = clock();
+	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+	printf("Czas trwania: %f \n", seconds);
+	// free(vector);
+	free(children);
 	return 0;
 }
